@@ -1,7 +1,5 @@
 import Contacts
-import CoreData
 import Combine
-import CombineExt
 
 public struct CombineContacts {
   
@@ -17,17 +15,28 @@ public struct CombineContacts {
   /// - Returns: Set granted to true if the user allows access and error is nil.
   public func requestAccess(for entityType: CNEntityType) -> AnyPublisher<Bool, ContactError> {
 
-    return AnyPublisher<Bool, ContactError>.create { subscriber in
-      self.contactStore.requestAccess(for: entityType) { (bool, error) in
-        if let _ = error {
-          subscriber.send(completion: .failure(.entityTypeError))
-        }
-        subscriber.send(bool)
-        subscriber.send(completion: .finished)
-      }
+//    return AnyPublisher<Bool, ContactError>.create { subscriber in
+//      self.contactStore.requestAccess(for: entityType) { (bool, error) in
+//        if let _ = error {
+//          subscriber.send(completion: .failure(.entityTypeError))
+//        }
+//        subscriber.send(bool)
+//        subscriber.send(completion: .finished)
+//      }
+//
+//      return AnyCancellable.empty
+//    }
     
-      return AnyCancellable.empty
+    return Future<Bool, ContactError> { completion in
+      self.contactStore.requestAccess(for: entityType) { (bool, error) in
+        if let error = error as? ContactError {
+          completion(.failure(error))
+        }
+        
+        completion(.success(bool))
+      }
     }
+    .eraseToAnyPublisher()
     
   }
   
@@ -42,18 +51,19 @@ public struct CombineContacts {
   
   public func unifiedContact(withIdentifier identifier: String, keysToFetch keys: [CNKeyDescriptor]) -> AnyPublisher<CNContact, ContactError> {
     
-   return AnyPublisher<CNContact, ContactError>.create { subscriber in
-      
+    return Future<CNContact, ContactError> { completion in
       do {
-        subscriber.send(try self.contactStore.unifiedContact(withIdentifier: identifier, keysToFetch: keys))
-        subscriber.send(completion: .finished)
+        completion(.success(try self.contactStore.unifiedContact(withIdentifier: identifier, keysToFetch: keys)) )
       } catch {
-        subscriber.send(completion: .failure(.identifierAndKeysToFetchError))
+        if let error = error as? ContactError {
+          completion(.failure(error))
+        } else {
+          fatalError("\(#line) unifiedContact withIdentifier error \(self)")
+        }
       }
       
-      return AnyCancellable.empty
-      
     }
+    .eraseToAnyPublisher()
     
   }
   
@@ -64,18 +74,19 @@ public struct CombineContacts {
   ///   - keys:     The properties to fetch in the returned CNContact object.
   /// - Returns: A unified contact matching or linked to the identifier.
   public func unifiedContacts(matching predicate: NSPredicate, keysToFetch keys: [CNKeyDescriptor] ) -> AnyPublisher<[CNContact], ContactError> {
-        
-    return AnyPublisher<[CNContact], ContactError>.create { subscriber in
+    
+    return Future<[CNContact], ContactError> { completion in
       do {
-        subscriber.send(try contactStore.unifiedContacts(matching: predicate, keysToFetch: keys))
-        subscriber.send(completion: .finished)
+        completion(.success(try contactStore.unifiedContacts(matching: predicate, keysToFetch: keys)) )
       } catch {
-        subscriber.send(completion: .failure(.predicateAndKeysToFetchError))
+        if let error = error as? ContactError {
+          completion(.failure(error))
+        } else {
+          fatalError("\(#line) unifiedContact matching error \(self)")
+        }
       }
-      
-      return AnyCancellable.empty
-      
     }
+    .eraseToAnyPublisher()
   }
   
   // MARK: - Fetching and Saving
@@ -85,17 +96,20 @@ public struct CombineContacts {
   /// - Parameter predicate: The predicate to use to fetch the matching groups. Set predicate to nil to match all groups.
   /// - Returns: An array of CNGroup objects that match the predicate.
   public func groups(matching predicate: NSPredicate?) -> AnyPublisher<[CNGroup], ContactError> {
-
-    return AnyPublisher<[CNGroup], ContactError>.create { subscriber in
+    
+    return Future<[CNGroup], ContactError> { completion in
       do {
-        subscriber.send(try self.contactStore.groups(matching: predicate))
-        subscriber.send(completion: .finished)
+        completion(.success(try self.contactStore.groups(matching: predicate)))
       } catch {
-        subscriber.send(completion: .failure(.groupsMatchingPredicateError))
+        if let error = error as? ContactError {
+          completion(.failure(error))
+        } else {
+          fatalError("\(#line) matching error \(self)")
+        }
       }
-      
-      return AnyCancellable.empty
     }
+    .eraseToAnyPublisher()
+    
   }
   
   /// Fetches all containers matching the specified predicate.
@@ -103,16 +117,20 @@ public struct CombineContacts {
   /// - Parameter predicate: The predicate to use to fetch matching containers. Set this property to nil to match all containers.
   /// - Returns: An array of CNContainer objects that match the predicate.
   public func containers(matching predicate: NSPredicate?) -> AnyPublisher<[CNContainer], ContactError> {
-    return AnyPublisher<[CNContainer], ContactError>.create { subscriber -> Cancellable in
+
+    return Future<[CNContainer], ContactError> { completion in
       do {
-        subscriber.send(try self.contactStore.containers(matching: predicate))
-        subscriber.send(completion: .finished)
+        completion(.success(try self.contactStore.containers(matching: predicate)))
       } catch {
-        subscriber.send(completion: .failure(.containersMatchingPredicateError))
+        if let error = error as? ContactError {
+          completion(.failure(error))
+        } else {
+          fatalError("\(#line) matching error \(self)")
+        }
       }
-      
-      return AnyCancellable.empty
     }
+    .eraseToAnyPublisher()
+    
   }
   
   /// Returns a Boolean value that indicates whether the enumeration of all contacts matching a contact fetch request executed successfully.
@@ -120,21 +138,22 @@ public struct CombineContacts {
   /// - Parameter fetchRequest: The contact fetch request that specifies the search criteria.
   /// - Returns: true if enumeration of all contacts matching a contact fetch request executes successfully; otherwise, false
   public func enumerateContacts(with fetchRequest: CNContactFetchRequest) -> AnyPublisher<(CNContact, UnsafeMutablePointer<ObjCBool>), ContactError> {
-
-    return AnyPublisher<(CNContact, UnsafeMutablePointer<ObjCBool>), ContactError>.create { subscriber -> Cancellable in
+    
+    return Future<(CNContact, UnsafeMutablePointer<ObjCBool>), ContactError> { completion in
       do {
-        try self.contactStore.enumerateContacts(with: fetchRequest, usingBlock: { (contact, pointer) in
-          subscriber.send((contact, pointer))
-        })
-        subscriber.send(completion: .finished)
-      } catch {
-        subscriber.send(completion: .failure(.enumerateContactsWithFetchRequestContactPointerError))
-      }
-      
-      return AnyCancellable {
+           try self.contactStore.enumerateContacts(with: fetchRequest, usingBlock: { (contact, pointer) in
+            completion( .success( (contact, pointer) ))
+           })
         
+      } catch {
+        if let error = error as? ContactError {
+          completion(.failure(error))
+        } else {
+          fatalError("\(#line) enumerateContacts error \(self)")
+        }
       }
-    }.eraseToAnyPublisher()
+    }
+    .eraseToAnyPublisher()
   }
   
   #if os(iOS) || os(OSX)
@@ -145,15 +164,15 @@ public struct CombineContacts {
   /// - Returns: true if the save request executes successfully; otherwise, false.
   public func execute(_ saveRequest: CNSaveRequest) -> AnyPublisher<Void, Never> {
 
-    return AnyPublisher<Void, Never>.create { subscriber -> Cancellable in
+    return Future<Void, Never> { completion in
       do {
-        subscriber.send(try self.contactStore.execute(saveRequest))
+        completion(.success(try self.contactStore.execute(saveRequest)))
       } catch {
-        subscriber.send(completion: .finished)
+        
       }
-
-      return AnyCancellable.empty
     }
+    .eraseToAnyPublisher()
+    
   }
   
   #endif
