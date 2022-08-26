@@ -3,7 +3,7 @@ import Combine
 
 public struct CombineContacts {
   
-  private let contactStore = CNContactStore()
+  internal let contactStore = CNContactStore()
   
   public init() {}
   
